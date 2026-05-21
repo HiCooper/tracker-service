@@ -18,7 +18,7 @@ public final class PartitionStrategy {
         if (key == null || key.isEmpty()) {
             return 0;
         }
-        return Math.abs(key.hashCode()) % partitionCount;
+        return (key.hashCode() & Integer.MAX_VALUE) % partitionCount;
     }
 
     /**

@@ -5,21 +5,26 @@ import com.gateflow.tracker.config.TrackerProperties;
 import com.gateflow.tracker.model.EventRecord;
 import com.gateflow.tracker.model.Session;
 import com.gateflow.tracker.repository.SessionRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionService {
 
     private final SessionRepository sessionRepository;
     private final TrackerProperties properties;
+    private final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();
+
+    public SessionService(SessionRepository sessionRepository, TrackerProperties properties) {
+        this.sessionRepository = sessionRepository;
+        this.properties = properties;
+    }
 
     /**
      * 获取或创建会话
@@ -60,9 +65,26 @@ public class SessionService {
     }
 
     /**
-     * 更新会话聚合指标
+     * 更新会话聚合指标（会话级别加锁，防止并发写丢失）
      */
     public void updateSessionMetrics(String sessionId, EventRecord event) {
+        if (sessionId == null) {
+            return;
+        }
+
+        Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
+        synchronized (lock) {
+            doUpdateSessionMetrics(sessionId, event);
+        }
+
+        // 如果会话已过期，清理锁
+        if (sessionLocks.size() > 10_000) {
+            sessionLocks.clear();
+            log.info("Session locks cleared to prevent unbounded growth");
+        }
+    }
+
+    private void doUpdateSessionMetrics(String sessionId, EventRecord event) {
         if (sessionId == null) {
             return;
         }
@@ -113,25 +135,31 @@ public class SessionService {
      * 结束会话
      */
     public void endSession(String sessionId) {
-        Session session = sessionRepository.findById(sessionId);
-        if (session == null) {
-            return;
+        Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
+        synchronized (lock) {
+            try {
+                Session session = sessionRepository.findById(sessionId);
+                if (session == null) {
+                    return;
+                }
+
+                session.setEndTime(Instant.now());
+                session.setDuration(Duration.between(session.getStartTime(), session.getEndTime()).toMillis());
+
+                if (session.getPageViews() != null && session.getPageViews() == 1
+                        && session.getDuration() != null && session.getDuration() < 10000) {
+                    session.setIsBounce(true);
+                    session.setBouncePage(session.getFirstPageUrl());
+                }
+
+                sessionRepository.save(session);
+                log.info("Session {} ended: duration={}ms, pv={}, clicks={}, isBounce={}",
+                        sessionId, session.getDuration(), session.getPageViews(),
+                        session.getClicks(), session.getIsBounce());
+            } finally {
+                sessionLocks.remove(sessionId);
+            }
         }
-
-        session.setEndTime(Instant.now());
-        session.setDuration(Duration.between(session.getStartTime(), session.getEndTime()).toMillis());
-
-        // 判断跳出：只有一次页面浏览且会话时长 < 10秒
-        if (session.getPageViews() != null && session.getPageViews() == 1
-                && session.getDuration() != null && session.getDuration() < 10000) {
-            session.setIsBounce(true);
-            session.setBouncePage(session.getFirstPageUrl());
-        }
-
-        sessionRepository.save(session);
-        log.info("Session {} ended: duration={}ms, pv={}, clicks={}, isBounce={}",
-                sessionId, session.getDuration(), session.getPageViews(),
-                session.getClicks(), session.getIsBounce());
     }
 
     /**

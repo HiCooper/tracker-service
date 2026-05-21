@@ -33,15 +33,14 @@ tracker:
   rate-limit:
     max-per-second: 10000
     burst: 20000
-
-spring:
-  application:
-    name: tracker-service
-
   clickhouse:
     url: ${CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/gateflow_tracker}
     user: ${CLICKHOUSE_USER:default}
     password: ${CLICKHOUSE_PASSWORD:}
+
+spring:
+  application:
+    name: tracker-service
 
   redis:
     host: ${REDIS_HOST:localhost}

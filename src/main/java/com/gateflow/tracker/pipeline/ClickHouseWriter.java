@@ -12,17 +12,20 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Component
 @Slf4j
 public class ClickHouseWriter {
 
+    private static final String INSERT_SQL =
+            "INSERT INTO gateflow_tracker.events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+
     private final ClickHouseProperties clickHouseProperties;
     private final DLQService dlqService;
     private final CircuitBreaker circuitBreaker;
-    private DataSource dataSource;
+    private volatile DataSource dataSource;
 
     public ClickHouseWriter(
             ClickHouseProperties clickHouseProperties,
@@ -35,22 +38,17 @@ public class ClickHouseWriter {
 
     private DataSource getDataSource() throws SQLException {
         if (dataSource == null) {
-            dataSource = clickHouseProperties.createDataSource();
+            synchronized (this) {
+                if (dataSource == null) {
+                    dataSource = clickHouseProperties.createDataSource();
+                }
+            }
         }
         return dataSource;
     }
 
-    /**
-     * 批量写入事件到 ClickHouse（带熔断保护）
-     */
     public void writeBatch(List<EventRecord> events) {
         if (events == null || events.isEmpty()) {
-            return;
-        }
-
-        if (circuitBreaker.getState() == CircuitBreaker.State.OPEN) {
-            log.warn("Circuit breaker open, sending {} events to DLQ", events.size());
-            events.forEach(e -> dlqService.store(e, "circuit_breaker_open"));
             return;
         }
 
@@ -64,12 +62,15 @@ public class ClickHouseWriter {
     }
 
     private void doWriteBatch(List<EventRecord> events) {
-        String sql = buildInsertSQL(events);
-
         try (Connection conn = getDataSource().getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+             PreparedStatement stmt = conn.prepareStatement(INSERT_SQL)) {
 
-            stmt.execute();
+            for (EventRecord e : events) {
+                setParameters(stmt, e);
+                stmt.addBatch();
+            }
+
+            stmt.executeBatch();
             log.debug("Successfully wrote {} events to ClickHouse", events.size());
 
         } catch (SQLException e) {
@@ -77,65 +78,71 @@ public class ClickHouseWriter {
         }
     }
 
-    private String buildInsertSQL(List<EventRecord> events) {
-        StringBuilder sql = new StringBuilder();
-        sql.append("INSERT INTO gateflow_tracker.events VALUES ");
+    private void setParameters(PreparedStatement stmt, EventRecord e) throws SQLException {
+        int i = 1;
+        stmt.setString(i++, nullToEmpty(e.getEventId()));
+        stmt.setString(i++, nullToEmpty(e.getEventType()));
+        stmt.setString(i++, nullToEmpty(e.getUserId()));
+        stmt.setString(i++, nullToEmpty(e.getAnonymousId()));
+        stmt.setString(i++, nullToEmpty(e.getSessionId()));
+        stmt.setLong(i++, e.getTimestamp() != null ? e.getTimestamp().toEpochMilli() : 0);
+        stmt.setLong(i++, e.getClientTime() != null ? e.getClientTime().toEpochMilli() : 0);
+        stmt.setLong(i++, e.getReceivedAt() != null ? e.getReceivedAt().toEpochMilli() : System.currentTimeMillis());
+        stmt.setString(i++, nullToEmpty(e.getPlatform()));
+        stmt.setString(i++, nullToEmpty(e.getAppVersion()));
+        stmt.setString(i++, nullToEmpty(e.getSdkVersion()));
+        stmt.setString(i++, nullToEmpty(e.getPageUrl()));
+        stmt.setString(i++, nullToEmpty(e.getPageTitle()));
+        stmt.setString(i++, nullToEmpty(e.getPageReferrer()));
+        stmt.setString(i++, nullToEmpty(e.getSpma()));
+        stmt.setString(i++, nullToEmpty(e.getSpmb()));
+        stmt.setString(i++, nullToEmpty(e.getSpmc()));
+        stmt.setString(i++, nullToEmpty(e.getSpmd()));
+        stmt.setString(i++, nullToEmpty(e.getDeviceType()));
+        stmt.setString(i++, nullToEmpty(e.getOs()));
+        stmt.setString(i++, nullToEmpty(e.getBrowser()));
+        stmt.setInt(i++, e.getScreenWidth() != null ? e.getScreenWidth() : 0);
+        stmt.setInt(i++, e.getScreenHeight() != null ? e.getScreenHeight() : 0);
+        stmt.setString(i++, nullToEmpty(e.getLanguage()));
+        stmt.setString(i++, nullToEmpty(e.getElementId()));
+        stmt.setString(i++, nullToEmpty(e.getElementType()));
+        stmt.setString(i++, nullToEmpty(e.getElementText()));
 
-        String values = events.stream()
-                .map(this::toValueString)
-                .collect(Collectors.joining(", "));
+        setNullableInt(stmt, i++, e.getClickX());
+        setNullableInt(stmt, i++, e.getClickY());
+        setNullableInt(stmt, i++, e.getScrollDepth());
+        setNullableLong(stmt, i++, e.getStayDuration());
 
-        sql.append(values);
-        return sql.toString();
+        stmt.setString(i++, nullToEmpty(e.getUtmSource()));
+        stmt.setString(i++, nullToEmpty(e.getUtmMedium()));
+        stmt.setString(i++, nullToEmpty(e.getUtmCampaign()));
+        stmt.setString(i++, nullToEmpty(e.getUtmTerm()));
+        stmt.setString(i++, nullToEmpty(e.getUtmContent()));
+
+        stmt.setObject(i++, e.getExpIds() != null ? e.getExpIds().toArray(new String[0]) : new String[0]);
+        stmt.setObject(i++, e.getVariants() != null ? e.getVariants().toArray(new String[0]) : new String[0]);
+
+        Object props = e.getProperties();
+        stmt.setString(i++, props != null ? props.toString() : "{}");
     }
 
-    private String toValueString(EventRecord e) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("('");
-        sb.append(escape(e.getEventId())).append("', '");
-        sb.append(escape(e.getEventType())).append("', '");
-        sb.append(escape(e.getUserId())).append("', '");
-        sb.append(escape(e.getAnonymousId())).append("', '");
-        sb.append(escape(e.getSessionId())).append("', ");
-        sb.append(e.getTimestamp() != null ? e.getTimestamp().toEpochMilli() : 0).append(", ");
-        sb.append(e.getClientTime() != null ? e.getClientTime().toEpochMilli() : 0).append(", ");
-        sb.append(e.getReceivedAt() != null ? e.getReceivedAt().toEpochMilli() : System.currentTimeMillis()).append(", '");
-        sb.append(escape(e.getPlatform())).append("', '");
-        sb.append(escape(e.getAppVersion())).append("', '");
-        sb.append(escape(e.getSdkVersion())).append("', '");
-        sb.append(escape(e.getPageUrl())).append("', '");
-        sb.append(escape(e.getPageTitle())).append("', '");
-        sb.append(escape(e.getPageReferrer())).append("', '");
-        sb.append(escape(e.getSpma())).append("', '");
-        sb.append(escape(e.getSpmb())).append("', '");
-        sb.append(escape(e.getSpmc())).append("', '");
-        sb.append(escape(e.getSpmd())).append("', '");
-        sb.append(escape(e.getDeviceType())).append("', '");
-        sb.append(escape(e.getOs())).append("', '");
-        sb.append(escape(e.getBrowser())).append("', ");
-        sb.append(e.getScreenWidth() != null ? e.getScreenWidth() : 0).append(", ");
-        sb.append(e.getScreenHeight() != null ? e.getScreenHeight() : 0).append(", '");
-        sb.append(escape(e.getLanguage())).append("', '");
-        sb.append(escape(e.getElementId())).append("', '");
-        sb.append(escape(e.getElementType())).append("', '");
-        sb.append(escape(e.getElementText())).append("', ");
-        sb.append(e.getClickX() != null ? e.getClickX() : "NULL").append(", ");
-        sb.append(e.getClickY() != null ? e.getClickY() : "NULL").append(", ");
-        sb.append(e.getScrollDepth() != null ? e.getScrollDepth() : "NULL").append(", ");
-        sb.append(e.getStayDuration() != null ? e.getStayDuration() : "NULL").append(", '");
-        sb.append(escape(e.getUtmSource())).append("', '");
-        sb.append(escape(e.getUtmMedium())).append("', '");
-        sb.append(escape(e.getUtmCampaign())).append("', '");
-        sb.append(escape(e.getUtmTerm())).append("', '");
-        sb.append(escape(e.getUtmContent())).append("', '");
-        sb.append(e.getExpIds() != null ? e.getExpIds().toString() : "[]").append("', '");
-        sb.append(e.getVariants() != null ? e.getVariants().toString() : "[]").append("', '");
-        sb.append(escape(e.getProperties() != null ? e.getProperties().toString() : "{}")).append("')");
-        return sb.toString();
+    private static String nullToEmpty(String value) {
+        return value != null ? value : "";
     }
 
-    private String escape(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\").replace("'", "\\'");
+    private static void setNullableInt(PreparedStatement stmt, int index, Integer value) throws SQLException {
+        if (value != null) {
+            stmt.setInt(index, value);
+        } else {
+            stmt.setNull(index, Types.INTEGER);
+        }
+    }
+
+    private static void setNullableLong(PreparedStatement stmt, int index, Long value) throws SQLException {
+        if (value != null) {
+            stmt.setLong(index, value);
+        } else {
+            stmt.setNull(index, Types.BIGINT);
+        }
     }
 }

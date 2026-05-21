@@ -55,24 +55,17 @@ public class TrackerKafkaProducer {
     }
 
     /**
-     * 发送失败事件到 DLQ Topic
+     * 发送失败事件到 DLQ Topic，保留完整事件信息
      */
     public void sendToDLQ(EventRecord event, String reason) {
         try {
-            // 将 reason 嵌入 event 的 properties 中
             java.util.Map<String, Object> props = event.getProperties() != null ?
                     new java.util.HashMap<>(event.getProperties()) : new java.util.HashMap<>();
             props.put("_dlq_reason", reason);
             props.put("_dlq_original_timestamp", event.getReceivedAt() != null ?
                     event.getReceivedAt().toString() : java.time.Instant.now().toString());
 
-            EventRecord dlqEvent = EventRecord.builder()
-                    .eventId(event.getEventId())
-                    .eventType(event.getEventType())
-                    .userId(event.getUserId())
-                    .anonymousId(event.getAnonymousId())
-                    .sessionId(event.getSessionId())
-                    .timestamp(event.getTimestamp())
+            EventRecord dlqEvent = event.toBuilder()
                     .receivedAt(java.time.Instant.now())
                     .properties(props)
                     .build();

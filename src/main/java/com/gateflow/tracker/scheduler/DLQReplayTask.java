@@ -7,7 +7,8 @@ import com.gateflow.tracker.model.EventRecord;
 import com.gateflow.tracker.pipeline.ClickHouseWriter;
 import com.gateflow.tracker.service.DLQService;
 import com.gateflow.tracker.service.DeduplicationService;
-import lombok.RequiredArgsConstructor;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -16,7 +17,6 @@ import java.util.Collections;
 import java.util.List;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class DLQReplayTask {
 
@@ -25,14 +25,30 @@ public class DLQReplayTask {
     private final DeduplicationService deduplicationService;
     private final ObjectMapper objectMapper;
     private final TrackerProperties properties;
+    private final CircuitBreaker circuitBreaker;
 
-    /**
-     * 定时重放 DLQ 中的事件
-     * 默认每 60 秒执行一次
-     */
+    public DLQReplayTask(DLQService dlqService,
+                         ClickHouseWriter clickHouseWriter,
+                         DeduplicationService deduplicationService,
+                         ObjectMapper objectMapper,
+                         TrackerProperties properties,
+                         CircuitBreakerRegistry circuitBreakerRegistry) {
+        this.dlqService = dlqService;
+        this.clickHouseWriter = clickHouseWriter;
+        this.deduplicationService = deduplicationService;
+        this.objectMapper = objectMapper;
+        this.properties = properties;
+        this.circuitBreaker = circuitBreakerRegistry.circuitBreaker("clickhouse");
+    }
+
     @Scheduled(fixedDelayString = "${tracker.dlq.replay-interval-ms:60000}",
                initialDelayString = "${tracker.dlq.replay-initial-delay-ms:30000}")
     public void replay() {
+        if (circuitBreaker.getState() == CircuitBreaker.State.OPEN) {
+            log.info("Circuit breaker is OPEN, skipping DLQ replay");
+            return;
+        }
+
         List<DLQEntry> entries = dlqService.fetchForReplay(properties.getDlq().getBatchSize());
 
         if (entries.isEmpty()) {
@@ -61,19 +77,14 @@ public class DLQReplayTask {
     }
 
     private void replayEntry(DLQEntry entry) throws Exception {
-        // 反序列化事件
         EventRecord event = objectMapper.readValue(entry.getEventJson(), EventRecord.class);
 
-        // 重新检查去重（防止重放期间事件已被正常处理）
         if (deduplicationService.isDuplicate(event.getEventId())) {
             log.info("Event {} already processed, skipping DLQ replay", event.getEventId());
             return;
         }
 
-        // 尝试写入 ClickHouse
         clickHouseWriter.writeBatch(Collections.singletonList(event));
-
-        // 标记已处理
         deduplicationService.markProcessed(event.getEventId());
 
         log.debug("Successfully replayed event {}", event.getEventId());
