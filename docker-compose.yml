@@ -1,62 +1,11 @@
-version: '3.8'
+# ============================================
+# Tracker Service - use shared infrastructure
+#
+# Local dev: run via IDE, connect to shared infra (localhost ports)
+#   Start shared infra first:
+#     cd ../victor-ab && docker compose -f docker/docker-compose.infra.yml up -d
+# ============================================
 
-services:
-  redis:
-    image: redis:7-alpine
-    container_name: tracker-redis
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: tracker-zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: tracker-kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_LOG_RETENTION_HOURS: 168
-
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.8
-    container_name: tracker-clickhouse
-    ports:
-      - "8123:8123"
-      - "9000:9000"
-    environment:
-      CLICKHOUSE_DB: gateflow_tracker
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-    volumes:
-      - clickhouse-data:/var/lib/clickhouse
-      - ./src/main/resources/db/migration:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "localhost:8123/ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-volumes:
-  redis-data:
-  clickhouse-data:
+networks:
+  shared-infra:
+    external: true
