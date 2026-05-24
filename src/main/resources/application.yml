@@ -35,8 +35,8 @@ tracker:
     burst: 20000
   clickhouse:
     url: ${CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/gateflow_tracker}
-    user: ${CLICKHOUSE_USER:default}
-    password: ${CLICKHOUSE_PASSWORD:}
+    user: ${CLICKHOUSE_USER:victor}
+    password: ${CLICKHOUSE_PASSWORD:victor123}
 
 spring:
   application:

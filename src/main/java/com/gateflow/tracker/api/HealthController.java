@@ -1,6 +1,5 @@
 package com.gateflow.tracker.api;
 
-import com.gateflow.tracker.config.ClickHouseProperties;
 import com.gateflow.tracker.service.DLQService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,11 +21,9 @@ import java.util.Map;
 @Slf4j
 public class HealthController {
 
-    private final ClickHouseProperties clickHouseProperties;
+    private final DataSource dataSource;
     private final DLQService dlqService;
     private final LettuceConnectionFactory redisConnectionFactory;
-
-    private volatile DataSource clickHouseDataSource;
 
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
@@ -49,14 +46,9 @@ public class HealthController {
     }
 
     private String checkClickHouse() {
-        try {
-            if (clickHouseDataSource == null) {
-                clickHouseDataSource = clickHouseProperties.createDataSource();
-            }
-            try (Connection conn = clickHouseDataSource.getConnection()) {
-                conn.createStatement().execute("SELECT 1");
-                return "UP";
-            }
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute("SELECT 1");
+            return "UP";
         } catch (SQLException e) {
             log.warn("ClickHouse health check failed: {}", e.getMessage());
             return "DOWN: " + e.getMessage();

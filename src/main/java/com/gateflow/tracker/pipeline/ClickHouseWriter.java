@@ -1,6 +1,5 @@
 package com.gateflow.tracker.pipeline;
 
-import com.gateflow.tracker.config.ClickHouseProperties;
 import com.gateflow.tracker.model.EventRecord;
 import com.gateflow.tracker.service.DLQService;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -22,29 +21,17 @@ public class ClickHouseWriter {
     private static final String INSERT_SQL =
             "INSERT INTO gateflow_tracker.events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
-    private final ClickHouseProperties clickHouseProperties;
+    private final DataSource dataSource;
     private final DLQService dlqService;
     private final CircuitBreaker circuitBreaker;
-    private volatile DataSource dataSource;
 
     public ClickHouseWriter(
-            ClickHouseProperties clickHouseProperties,
+            DataSource dataSource,
             DLQService dlqService,
             CircuitBreakerRegistry circuitBreakerRegistry) {
-        this.clickHouseProperties = clickHouseProperties;
+        this.dataSource = dataSource;
         this.dlqService = dlqService;
         this.circuitBreaker = circuitBreakerRegistry.circuitBreaker("clickhouse");
-    }
-
-    private DataSource getDataSource() throws SQLException {
-        if (dataSource == null) {
-            synchronized (this) {
-                if (dataSource == null) {
-                    dataSource = clickHouseProperties.createDataSource();
-                }
-            }
-        }
-        return dataSource;
     }
 
     public void writeBatch(List<EventRecord> events) {
@@ -62,7 +49,7 @@ public class ClickHouseWriter {
     }
 
     private void doWriteBatch(List<EventRecord> events) {
-        try (Connection conn = getDataSource().getConnection();
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(INSERT_SQL)) {
 
             for (EventRecord e : events) {

@@ -1,6 +1,5 @@
 package com.gateflow.tracker.repository;
 
-import com.gateflow.tracker.config.ClickHouseProperties;
 import com.gateflow.tracker.model.Session;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
@@ -15,24 +14,16 @@ import java.util.List;
 @Slf4j
 public class SessionRepository {
 
-    private final ClickHouseProperties clickHouseProperties;
-    private DataSource dataSource;
+    private final DataSource dataSource;
 
-    public SessionRepository(ClickHouseProperties clickHouseProperties) {
-        this.clickHouseProperties = clickHouseProperties;
-    }
-
-    private DataSource getDataSource() throws SQLException {
-        if (dataSource == null) {
-            dataSource = clickHouseProperties.createDataSource();
-        }
-        return dataSource;
+    public SessionRepository(DataSource dataSource) {
+        this.dataSource = dataSource;
     }
 
     public Session findById(String sessionId) {
         String sql = "SELECT * FROM sessions WHERE session_id = ?";
 
-        try (Connection conn = getDataSource().getConnection();
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             stmt.setString(1, sessionId);
@@ -51,7 +42,7 @@ public class SessionRepository {
         String sql = "SELECT * FROM sessions WHERE last_active_at >= ? AND end_time IS NULL";
         List<Session> sessions = new ArrayList<>();
 
-        try (Connection conn = getDataSource().getConnection();
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             // Convert Instant to LocalDateTime for ClickHouse compatibility
@@ -81,7 +72,7 @@ public class SessionRepository {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
-        try (Connection conn = getDataSource().getConnection();
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             setStatementParams(stmt, session);
