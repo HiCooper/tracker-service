@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <springProperty scope="context" name="COMMON_ERROR_LOG_PATH"
+                    source="logger.error-log-path"
+                    defaultValue="./logs/common-error.log"/>
+
+    <!-- 通用 错误日志: 纯文本, 仅 ERROR 级别, 异步写盘 -->
+    <appender name="COMMON_ERROR_FILE_SYNC" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${COMMON_ERROR_LOG_PATH}</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %logger - %m%n%wEx</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${COMMON_ERROR_LOG_PATH}.%d{yyyy-MM-dd}.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="COMMON_ERROR_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="COMMON_ERROR_FILE_SYNC"/>
+        <queueSize>256</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="COMMON_ERROR_FILE"/>
+    </root>
+</configuration>

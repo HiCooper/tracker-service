@@ -24,6 +24,9 @@ public class ClickHouseConfig {
         if (properties.getPassword() != null && !properties.getPassword().isEmpty()) {
             props.setProperty("password", properties.getPassword());
         }
+        props.setProperty("socket_timeout", "30000");
+        props.setProperty("connection_timeout", "10000");
+        props.setProperty("http_connection_provider", "HTTP_URL_CONNECTION");
         return new ClickHouseDataSource(properties.getUrl(), props);
     }
 }

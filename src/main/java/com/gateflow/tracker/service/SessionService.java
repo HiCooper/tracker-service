@@ -97,7 +97,6 @@ public class SessionService {
 
         // 检查会话是否已过期
         if (isExpired(session)) {
-            log.info("Session {} expired", sessionId);
             return;
         }
 
@@ -127,8 +126,6 @@ public class SessionService {
         session.setLastActiveAt(Instant.now());
 
         sessionRepository.save(session);
-        log.debug("Session {} updated: pv={}, clicks={}, exposures={}",
-                sessionId, session.getPageViews(), session.getClicks(), session.getExposures());
     }
 
     /**
@@ -153,9 +150,6 @@ public class SessionService {
                 }
 
                 sessionRepository.save(session);
-                log.info("Session {} ended: duration={}ms, pv={}, clicks={}, isBounce={}",
-                        sessionId, session.getDuration(), session.getPageViews(),
-                        session.getClicks(), session.getIsBounce());
             } finally {
                 sessionLocks.remove(sessionId);
             }

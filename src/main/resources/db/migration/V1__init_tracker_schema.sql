@@ -86,7 +86,7 @@ ENGINE = SummingMergeTree()
 PARTITION BY toYYYYMMDD(timestamp)
 ORDER BY (user_id, spmb, spmd, event_type, timestamp)
 AS SELECT
-    toStartOfHour(timestamp) as timestamp,
+    toStartOfHour(toDateTime(timestamp / 1000)) as timestamp,
     user_id,
     anonymous_id,
     session_id,
