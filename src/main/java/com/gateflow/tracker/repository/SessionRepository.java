@@ -7,12 +7,16 @@ import org.springframework.stereotype.Repository;
 import javax.sql.DataSource;
 import java.sql.*;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
 @Repository
 @Slf4j
 public class SessionRepository {
+
+    private static final DateTimeFormatter CH_DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final DataSource dataSource;
 
@@ -45,9 +49,10 @@ public class SessionRepository {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            // Convert Instant to LocalDateTime for ClickHouse compatibility
-            java.time.LocalDateTime localDateTime = java.time.LocalDateTime.ofInstant(since, java.time.ZoneOffset.UTC);
-            stmt.setObject(1, localDateTime);
+            // Format as ClickHouse-compatible DateTime string (second precision)
+            String sinceStr = java.time.LocalDateTime.ofInstant(since, ZoneOffset.UTC)
+                    .format(CH_DATETIME);
+            stmt.setString(1, sinceStr);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     sessions.add(mapResultSetToSession(rs));
@@ -92,8 +97,10 @@ public class SessionRepository {
         stmt.setString(idx++, session.getAnonymousId() != null ? session.getAnonymousId() : "");
         stmt.setString(idx++, session.getPlatform() != null ? session.getPlatform() : "");
 
-        stmt.setObject(idx++, session.getStartTime() != null ? java.time.LocalDateTime.ofInstant(session.getStartTime(), java.time.ZoneOffset.UTC) : null);
-        stmt.setObject(idx++, session.getEndTime() != null ? java.time.LocalDateTime.ofInstant(session.getEndTime(), java.time.ZoneOffset.UTC) : null);
+        stmt.setObject(idx++, session.getStartTime() != null ?
+                java.time.LocalDateTime.ofInstant(session.getStartTime(), ZoneOffset.UTC).format(CH_DATETIME) : null);
+        stmt.setObject(idx++, session.getEndTime() != null ?
+                java.time.LocalDateTime.ofInstant(session.getEndTime(), ZoneOffset.UTC).format(CH_DATETIME) : null);
         stmt.setLong(idx++, session.getDuration() != null ? session.getDuration() : 0);
 
         stmt.setInt(idx++, session.getPageViews() != null ? session.getPageViews() : 0);
@@ -114,7 +121,9 @@ public class SessionRepository {
         stmt.setString(idx++, session.getDeviceType() != null ? session.getDeviceType() : "");
         stmt.setString(idx++, session.getOs() != null ? session.getOs() : "");
 
-        stmt.setObject(idx++, session.getLastActiveAt() != null ? java.time.LocalDateTime.ofInstant(session.getLastActiveAt(), java.time.ZoneOffset.UTC) : java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+        stmt.setString(idx++, session.getLastActiveAt() != null ?
+                java.time.LocalDateTime.ofInstant(session.getLastActiveAt(), ZoneOffset.UTC).format(CH_DATETIME) :
+                java.time.LocalDateTime.now(ZoneOffset.UTC).format(CH_DATETIME));
     }
 
     private Session mapResultSetToSession(ResultSet rs) throws SQLException {

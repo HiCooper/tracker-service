@@ -1,6 +1,10 @@
 server:
   port: ${TRACKER_PORT:8088}
 
+# JWT — 与 tracker-admin 共享 secret，用于验证 SDK token
+jwt:
+  secret: ${JWT_SECRET:GateFlowTrackerJwtSecretKey2026!!}
+
 tracker:
   session:
     timeout-minutes: 30
