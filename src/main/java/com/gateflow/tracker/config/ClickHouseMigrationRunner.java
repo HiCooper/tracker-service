@@ -44,7 +44,9 @@ public class ClickHouseMigrationRunner implements ApplicationRunner {
             }
             log.info("ClickHouse migrations completed: {} files executed", pending.size());
         } catch (Exception e) {
-            log.error("ClickHouse migration failed, service will continue startup", e);
+            // fail-fast:schema 未就绪时继续启动会导致写入/查询在运行期才报错,更难定位。
+            log.error("ClickHouse migration failed, aborting startup", e);
+            throw new IllegalStateException("ClickHouse migration failed", e);
         }
     }
 

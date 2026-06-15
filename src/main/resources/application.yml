@@ -39,24 +39,29 @@ tracker:
     burst: 20000
   clickhouse:
     url: ${CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/gateflow_tracker}
-    user: ${CLICKHOUSE_USER:victor}
-    password: ${CLICKHOUSE_PASSWORD:victor123}
+    user: ${CLICKHOUSE_USER:default}
+    password: ${CLICKHOUSE_PASSWORD:}
+  pipeline:
+    # true: 事件先入 Kafka(削峰/可重放),由 ClickHouseKafkaConsumer 批量写 ClickHouse,
+    #       Kafka 不可用时降级为同步写 ClickHouse。false: 直接同步写 ClickHouse。
+    async-kafka: ${TRACKER_ASYNC_KAFKA:true}
 
 spring:
   application:
     name: tracker-service
 
-  redis:
-    host: ${REDIS_HOST:localhost}
-    port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:}
-    database: 0
-    lettuce:
-      pool:
-        max-active: 50
-        max-idle: 20
-        min-idle: 5
-        max-wait: 3000ms
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      lettuce:
+        pool:
+          max-active: 50
+          max-idle: 20
+          min-idle: 5
+          max-wait: 3000ms
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}

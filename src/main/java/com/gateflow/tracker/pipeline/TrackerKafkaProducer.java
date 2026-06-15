@@ -22,7 +22,7 @@ public class TrackerKafkaProducer {
      * 发送事件到 Kafka
      * 使用 userId 作为 key，保证同一用户的事件有序
      */
-    public void sendEvent(EventRecord event) {
+    public CompletableFuture<SendResult<String, EventRecord>> sendEvent(EventRecord event) {
         String topic = getTopicForEvent(event);
         String key = event.getUserId() != null ? event.getUserId() :
                      event.getAnonymousId() != null ? event.getAnonymousId() : "unknown";
@@ -43,6 +43,7 @@ public class TrackerKafkaProducer {
                     }
                 }
         );
+        return future;
     }
 
     /**
