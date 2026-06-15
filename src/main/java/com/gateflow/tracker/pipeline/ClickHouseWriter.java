@@ -1,7 +1,8 @@
 package com.gateflow.tracker.pipeline;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gateflow.tracker.model.EventRecord;
-import com.gateflow.tracker.service.DLQService;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 @Component
@@ -22,18 +26,21 @@ public class ClickHouseWriter {
             "INSERT INTO gateflow_tracker.events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     private final DataSource dataSource;
-    private final DLQService dlqService;
+    private final ObjectMapper objectMapper;
     private final CircuitBreaker circuitBreaker;
 
     public ClickHouseWriter(
             DataSource dataSource,
-            DLQService dlqService,
+            ObjectMapper objectMapper,
             CircuitBreakerRegistry circuitBreakerRegistry) {
         this.dataSource = dataSource;
-        this.dlqService = dlqService;
+        this.objectMapper = objectMapper;
         this.circuitBreaker = circuitBreakerRegistry.circuitBreaker("clickhouse");
     }
 
+    /**
+     * 批量写入 ClickHouse。失败时抛出异常,由调用方负责 DLQ 兜底(单一所有权,避免双写)。
+     */
     public void writeBatch(List<EventRecord> events) {
         if (events == null || events.isEmpty()) {
             return;
@@ -43,7 +50,6 @@ public class ClickHouseWriter {
             circuitBreaker.executeRunnable(() -> doWriteBatch(events));
         } catch (Exception ex) {
             log.error("Failed to write {} events to ClickHouse", events.size(), ex);
-            events.forEach(e -> dlqService.store(e, "clickhouse_write_failed"));
             throw new RuntimeException("ClickHouse write failed", ex);
         }
     }
@@ -72,9 +78,11 @@ public class ClickHouseWriter {
         stmt.setString(i++, nullToEmpty(e.getUserId()));
         stmt.setString(i++, nullToEmpty(e.getAnonymousId()));
         stmt.setString(i++, nullToEmpty(e.getSessionId()));
-        stmt.setLong(i++, e.getTimestamp() != null ? e.getTimestamp().toEpochMilli() : 0);
-        stmt.setLong(i++, e.getClientTime() != null ? e.getClientTime().toEpochMilli() : 0);
-        stmt.setLong(i++, e.getReceivedAt() != null ? e.getReceivedAt().toEpochMilli() : System.currentTimeMillis());
+        // DateTime64(3) 列必须绑定时间对象,而非 epoch-millis 长整型(否则会被误解析为「秒」)。
+        // 统一以 UTC LocalDateTime 绑定,需与 ClickHouse 会话时区(UTC,见 ClickHouseConfig)一致。
+        stmt.setObject(i++, toUtcDateTime(e.getTimestamp() != null ? e.getTimestamp() : Instant.now()));
+        stmt.setObject(i++, toUtcDateTime(e.getClientTime() != null ? e.getClientTime() : e.getTimestamp()));
+        stmt.setObject(i++, toUtcDateTime(e.getReceivedAt() != null ? e.getReceivedAt() : Instant.now()));
         stmt.setString(i++, nullToEmpty(e.getPlatform()));
         stmt.setString(i++, nullToEmpty(e.getAppVersion()));
         stmt.setString(i++, nullToEmpty(e.getSdkVersion()));
@@ -109,8 +117,25 @@ public class ClickHouseWriter {
         stmt.setObject(i++, e.getExpIds() != null ? e.getExpIds().toArray(new String[0]) : new String[0]);
         stmt.setObject(i++, e.getVariants() != null ? e.getVariants().toArray(new String[0]) : new String[0]);
 
-        Object props = e.getProperties();
-        stmt.setString(i++, props != null ? props.toString() : "{}");
+        stmt.setString(i++, serializeProperties(e));
+    }
+
+    /** 将 properties Map 序列化为 JSON 字符串(而非 Map.toString(),后者不是合法 JSON)。 */
+    private String serializeProperties(EventRecord e) {
+        if (e.getProperties() == null || e.getProperties().isEmpty()) {
+            return "{}";
+        }
+        try {
+            return objectMapper.writeValueAsString(e.getProperties());
+        } catch (JsonProcessingException ex) {
+            log.warn("Failed to serialize properties for event {}, storing empty object", e.getEventId(), ex);
+            return "{}";
+        }
+    }
+
+    /** 把 Instant 转为 UTC LocalDateTime,供 DateTime64(3) 列绑定;null 回退当前时间。 */
+    private static LocalDateTime toUtcDateTime(Instant instant) {
+        return LocalDateTime.ofInstant(instant != null ? instant : Instant.now(), ZoneOffset.UTC);
     }
 
     private static String nullToEmpty(String value) {

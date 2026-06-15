@@ -14,6 +14,16 @@ public class TrackerProperties {
     private DLQ dlq = new DLQ();
     private Kafka kafka = new Kafka();
     private RateLimit rateLimit = new RateLimit();
+    private Pipeline pipeline = new Pipeline();
+
+    @Data
+    public static class Pipeline {
+        /**
+         * true: 事件先入 Kafka(削峰/可重放),Kafka 不可用时降级同步写 ClickHouse。
+         * false: 直接同步写 ClickHouse。
+         */
+        private boolean asyncKafka = true;
+    }
 
     @Data
     public static class Session {
