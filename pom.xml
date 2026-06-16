@@ -142,6 +142,13 @@
             <version>${jackson.version}</version>
         </dependency>
 
+        <!-- Micrometer Prometheus registry: 暴露 /actuator/prometheus 指标 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

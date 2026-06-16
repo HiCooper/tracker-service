@@ -37,12 +37,14 @@ public class HealthController {
         services.put("dlq", dlqService.getDLQSize() + " entries");
         health.put("services", services);
 
-        boolean allUp = services.values().stream().allMatch(v -> v.startsWith("UP"));
-        if (!allUp) {
-            health.put("status", "DEGRADED");
+        boolean allUp = services.get("clickhouse").startsWith("UP")
+                && services.get("redis").startsWith("UP");
+        if (allUp) {
+            return ResponseEntity.ok(health);
         }
-
-        return ResponseEntity.ok(health);
+        // 依赖不可用时返回 503,使负载均衡/编排健康探针能正确摘除实例。
+        health.put("status", "DEGRADED");
+        return ResponseEntity.status(503).body(health);
     }
 
     private String checkClickHouse() {
