@@ -109,3 +109,6 @@ logging:
     com.gateflow.tracker: INFO
     org.springframework.kafka: WARN
     org.apache.kafka: WARN
+  pattern:
+    # 在日志级别字段后附加请求关联 ID(由 RequestIdFilter 写入 MDC)
+    level: "%5p [${spring.application.name:tracker-service},%X{requestId:-}]"
