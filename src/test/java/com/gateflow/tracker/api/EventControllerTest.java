@@ -41,6 +41,9 @@ class EventControllerTest {
     @Mock
     private RateLimiterService rateLimiter;
 
+    @Mock
+    private com.gateflow.tracker.metrics.PipelineMetrics metrics;
+
     @InjectMocks
     private EventController eventController;
 

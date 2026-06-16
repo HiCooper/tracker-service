@@ -3,6 +3,7 @@ package com.gateflow.tracker.api;
 import com.gateflow.tracker.api.dto.EventDTO;
 import com.gateflow.tracker.api.dto.EventRequest;
 import com.gateflow.tracker.api.dto.EventResponse;
+import com.gateflow.tracker.metrics.PipelineMetrics;
 import com.gateflow.tracker.model.EventRecord;
 import com.gateflow.tracker.model.Session;
 import com.gateflow.tracker.service.*;
@@ -26,6 +27,7 @@ public class EventController {
     private final EnrichmentService enrichmentService;
     private final DLQService dlqService;
     private final RateLimiterService rateLimiter;
+    private final PipelineMetrics metrics;
 
     @PostMapping("/collect")
     public ResponseEntity<EventResponse> collect(@Valid @RequestBody EventRequest request) {
@@ -44,13 +46,16 @@ public class EventController {
             // 基础校验
             if (!validateEvent(event)) {
                 rejected++;
+                metrics.incrementRejected();
                 dlqService.store(toEventRecord(event), "validation_failed");
+                metrics.incrementDlqStored();
                 continue;
             }
 
             // 去重检查
             if (deduplicationService.isDuplicate(event.getEventId())) {
                 duplicate++;
+                metrics.incrementDuplicate();
                 continue;
             }
 
@@ -76,10 +81,13 @@ public class EventController {
             try {
                 collectorService.collect(enriched);
                 accepted++;
+                metrics.incrementAccepted();
             } catch (Exception e) {
                 log.error("Failed to collect event {}", event.getEventId(), e);
                 dlqService.store(enriched, "collection_failed");
+                metrics.incrementDlqStored();
                 rejected++;
+                metrics.incrementRejected();
             }
         }
 

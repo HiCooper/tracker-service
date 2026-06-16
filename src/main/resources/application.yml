@@ -94,10 +94,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,prometheus,metrics
+        include: health,prometheus,metrics,info
   endpoint:
     health:
       show-details: always
+      probes:
+        enabled: true   # 暴露 /actuator/health/liveness 与 /readiness 供 K8s 探针
+  metrics:
+    tags:
+      application: tracker-service
 
 logging:
   level:
