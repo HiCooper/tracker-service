@@ -1,6 +1,7 @@
 package com.gateflow.tracker.api;
 
 import com.gateflow.tracker.service.DLQService;
+import com.gateflow.tracker.service.DeduplicationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -14,6 +15,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -23,6 +25,7 @@ public class HealthController {
 
     private final DataSource dataSource;
     private final DLQService dlqService;
+    private final DeduplicationService deduplicationService;
     private final LettuceConnectionFactory redisConnectionFactory;
 
     @GetMapping("/health")
@@ -34,8 +37,15 @@ public class HealthController {
         Map<String, String> services = new HashMap<>();
         services.put("clickhouse", checkClickHouse());
         services.put("redis", checkRedis());
-        services.put("dlq", dlqService.getDLQSize() + " entries");
+        long dlqSize = dlqService.getDLQSize();
+        services.put("dlq", dlqSize + " entries");
         health.put("services", services);
+
+        // 结构化管道指标,供管理端监控页采集(数值型,便于直接消费)
+        Map<String, Object> pipeline = new LinkedHashMap<>();
+        pipeline.put("dlqSize", dlqSize);
+        pipeline.put("dedupHitRate", deduplicationService.getLocalCacheHitRate());
+        health.put("pipeline", pipeline);
 
         boolean allUp = services.get("clickhouse").startsWith("UP")
                 && services.get("redis").startsWith("UP");
