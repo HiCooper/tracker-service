@@ -29,6 +29,7 @@ public class EventController {
     private final RateLimiterService rateLimiter;
     private final PipelineMetrics metrics;
     private final com.gateflow.tracker.validation.SchemaValidationService schemaValidation;
+    private final PrivacyService privacyService;
 
     @PostMapping("/collect")
     public ResponseEntity<EventResponse> collect(@Valid @RequestBody EventRequest request) {
@@ -69,6 +70,9 @@ public class EventController {
                 metrics.incrementDuplicate();
                 continue;
             }
+
+            // 隐私合规:同意门控 + PII 掩码/哈希(在增强前处理原始字段)
+            privacyService.apply(event);
 
             // 数据增强
             EventRecord enriched = enrichmentService.enrich(event);

@@ -48,6 +48,12 @@ tracker:
   schema:
     # 事件契约校验模式:off | monitor(仅打点,默认) | enforce(违规进隔离区)
     mode: ${TRACKER_SCHEMA_MODE:monitor}
+  privacy:
+    # 隐私合规(默认全关,非破坏)
+    require-consent: ${TRACKER_REQUIRE_CONSENT:false}   # consent=false 时剥离 PII
+    hash-user-id: ${TRACKER_HASH_USER_ID:false}          # 对 userId 不可逆哈希
+    mask-heuristics: ${TRACKER_MASK_HEURISTICS:false}    # 自定义属性邮箱/手机号启发式掩码
+    pii-fields: ${TRACKER_PII_FIELDS:}                    # 需哈希的自定义 PII 字段(逗号分隔)
 
 spring:
   application:

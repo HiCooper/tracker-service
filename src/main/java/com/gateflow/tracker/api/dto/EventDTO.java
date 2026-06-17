@@ -33,6 +33,9 @@ public class EventDTO {
     private String appVersion;
     private String sdkVersion;
 
+    /** 用户同意标记(隐私合规)。null/true=已授权;false=拒绝(require-consent 模式下剥离 PII)。 */
+    private Boolean consent;
+
     private PageData page;
     private SessionData session;
     private DeviceData device;
