@@ -45,6 +45,9 @@ tracker:
     # true: 事件先入 Kafka(削峰/可重放),由 ClickHouseKafkaConsumer 批量写 ClickHouse,
     #       Kafka 不可用时降级为同步写 ClickHouse。false: 直接同步写 ClickHouse。
     async-kafka: ${TRACKER_ASYNC_KAFKA:true}
+  schema:
+    # 事件契约校验模式:off | monitor(仅打点,默认) | enforce(违规进隔离区)
+    mode: ${TRACKER_SCHEMA_MODE:monitor}
 
 spring:
   application:

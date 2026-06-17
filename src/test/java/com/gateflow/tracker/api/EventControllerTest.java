@@ -44,6 +44,9 @@ class EventControllerTest {
     @Mock
     private com.gateflow.tracker.metrics.PipelineMetrics metrics;
 
+    @Mock
+    private com.gateflow.tracker.validation.SchemaValidationService schemaValidation;
+
     @InjectMocks
     private EventController eventController;
 
@@ -164,6 +167,22 @@ class EventControllerTest {
         assertEquals(2, response.getBody().getData().getAccepted());
         assertEquals(1, response.getBody().getData().getDuplicate());
         assertEquals(0, response.getBody().getData().getRejected());
+    }
+
+    @Test
+    void collect_schemaViolationEnforce_quarantinesAndRejects() throws Exception {
+        when(rateLimiter.tryAcquire(anyString())).thenReturn(true);
+        when(schemaValidation.check(any(EventDTO.class), anyString()))
+                .thenReturn(com.gateflow.tracker.validation.SchemaValidationService.Outcome.VIOLATION_ENFORCE);
+
+        EventRequest request = createValidRequest("evt_001");
+        ResponseEntity<EventResponse> response = eventController.collect(request);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(0, response.getBody().getData().getAccepted());
+        assertEquals(1, response.getBody().getData().getRejected());
+        verify(dlqService).store(any(EventRecord.class), eq("schema_violation"));
+        verify(collectorService, never()).collect(any());
     }
 
     private EventRequest createValidRequest(String eventId) {

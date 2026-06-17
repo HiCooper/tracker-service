@@ -28,6 +28,7 @@ public class EventController {
     private final DLQService dlqService;
     private final RateLimiterService rateLimiter;
     private final PipelineMetrics metrics;
+    private final com.gateflow.tracker.validation.SchemaValidationService schemaValidation;
 
     @PostMapping("/collect")
     public ResponseEntity<EventResponse> collect(@Valid @RequestBody EventRequest request) {
@@ -48,6 +49,16 @@ public class EventController {
                 rejected++;
                 metrics.incrementRejected();
                 dlqService.store(toEventRecord(event), "validation_failed");
+                metrics.incrementDlqStored();
+                continue;
+            }
+
+            // 事件契约校验:enforce 模式下违规事件进隔离区,不进主表;monitor 模式仅打点
+            if (schemaValidation.check(event, clientId)
+                    == com.gateflow.tracker.validation.SchemaValidationService.Outcome.VIOLATION_ENFORCE) {
+                rejected++;
+                metrics.incrementRejected();
+                dlqService.store(toEventRecord(event), "schema_violation");
                 metrics.incrementDlqStored();
                 continue;
             }
