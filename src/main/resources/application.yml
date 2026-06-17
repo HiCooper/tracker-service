@@ -48,6 +48,10 @@ tracker:
   schema:
     # 事件契约校验模式:off | monitor(仅打点,默认) | enforce(违规进隔离区)
     mode: ${TRACKER_SCHEMA_MODE:monitor}
+  identity:
+    # 身份解析:anonymousId→userId 缝合(默认开启,仅回填缺失 userId,严格增量)
+    enabled: ${TRACKER_IDENTITY_ENABLED:true}
+    ttl-days: ${TRACKER_IDENTITY_TTL_DAYS:90}
   privacy:
     # 隐私合规(默认全关,非破坏)
     require-consent: ${TRACKER_REQUIRE_CONSENT:false}   # consent=false 时剥离 PII

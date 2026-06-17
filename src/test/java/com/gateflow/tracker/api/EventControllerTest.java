@@ -50,6 +50,9 @@ class EventControllerTest {
     @Mock
     private PrivacyService privacyService;
 
+    @Mock
+    private IdentityService identityService;
+
     @InjectMocks
     private EventController eventController;
 
@@ -186,6 +189,46 @@ class EventControllerTest {
         assertEquals(1, response.getBody().getData().getRejected());
         verify(dlqService).store(any(EventRecord.class), eq("schema_violation"));
         verify(collectorService, never()).collect(any());
+    }
+
+    @Test
+    void collect_identifyEvent_linksAndSkipsIngestion() throws Exception {
+        when(rateLimiter.tryAcquire(anyString())).thenReturn(true);
+
+        EventRequest request = new EventRequest();
+        request.setClientId("c");
+        EventDTO id = new EventDTO();
+        id.setEventId("evt_id");
+        id.setEventType("$identify");
+        id.setAnonymousId("anon1");
+        id.setUserId("user1");
+        id.setTimestamp(System.currentTimeMillis());
+        request.setEvents(List.of(id));
+
+        ResponseEntity<EventResponse> response = eventController.collect(request);
+
+        assertEquals(1, response.getBody().getData().getAccepted());
+        verify(identityService).link("anon1", "user1");
+        verify(collectorService, never()).collect(any());
+    }
+
+    @Test
+    void collect_anonymousEvent_backfillsUserIdFromIdentityMap() throws Exception {
+        when(rateLimiter.tryAcquire(anyString())).thenReturn(true);
+        when(deduplicationService.isDuplicate(anyString())).thenReturn(false);
+        EventRecord anon = EventRecord.builder().eventId("e1").eventType("page_view")
+                .anonymousId("anon1").build(); // userId 为空
+        when(enrichmentService.enrich(any(EventDTO.class))).thenReturn(anon);
+        when(identityService.resolve("anon1")).thenReturn("user9");
+        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any()))
+                .thenReturn(Session.builder().sessionId("s").build());
+        doNothing().when(collectorService).collect(any(EventRecord.class));
+
+        eventController.collect(createValidRequest("e1"));
+
+        verify(identityService).resolve("anon1");
+        verify(identityService, never()).link(any(), any());
+        assertEquals("user9", anon.getUserId());
     }
 
     private EventRequest createValidRequest(String eventId) {

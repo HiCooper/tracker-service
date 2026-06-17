@@ -30,6 +30,7 @@ public class EventController {
     private final PipelineMetrics metrics;
     private final com.gateflow.tracker.validation.SchemaValidationService schemaValidation;
     private final PrivacyService privacyService;
+    private final IdentityService identityService;
 
     @PostMapping("/collect")
     public ResponseEntity<EventResponse> collect(@Valid @RequestBody EventRequest request) {
@@ -51,6 +52,20 @@ public class EventController {
                 metrics.incrementRejected();
                 dlqService.store(toEventRecord(event), "validation_failed");
                 metrics.incrementDlqStored();
+                continue;
+            }
+
+            // 身份解析控制事件:$identify 建立 anonymousId→userId 映射,不入主表
+            if ("$identify".equals(event.getEventType())) {
+                if (hasText(event.getAnonymousId()) && hasText(event.getUserId())) {
+                    identityService.link(event.getAnonymousId(), event.getUserId());
+                    metrics.incrementIdentityLinked();
+                    accepted++;
+                    metrics.incrementAccepted();
+                } else {
+                    rejected++;
+                    metrics.incrementRejected();
+                }
                 continue;
             }
 
@@ -76,6 +91,18 @@ public class EventController {
 
             // 数据增强
             EventRecord enriched = enrichmentService.enrich(event);
+
+            // 身份解析:已识别事件建立映射;匿名事件回填 userId(把匿名行为缝合到用户)
+            if (hasText(enriched.getUserId()) && hasText(enriched.getAnonymousId())) {
+                identityService.link(enriched.getAnonymousId(), enriched.getUserId());
+                metrics.incrementIdentityLinked();
+            } else if (!hasText(enriched.getUserId()) && hasText(enriched.getAnonymousId())) {
+                String resolved = identityService.resolve(enriched.getAnonymousId());
+                if (resolved != null) {
+                    enriched.setUserId(resolved);
+                    metrics.incrementIdentityResolved();
+                }
+            }
 
             // 会话管理
             Session session = sessionService.getOrCreateSession(
@@ -107,6 +134,10 @@ public class EventController {
         }
 
         return ResponseEntity.ok(EventResponse.success(accepted, duplicate, rejected));
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
     }
 
     private boolean validateEvent(EventDTO event) {

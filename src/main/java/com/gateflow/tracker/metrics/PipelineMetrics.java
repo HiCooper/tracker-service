@@ -23,6 +23,8 @@ public class PipelineMetrics {
     private final Counter schemaViolation;
     private final Counter piiMasked;
     private final Counter consentDenied;
+    private final Counter identityLinked;
+    private final Counter identityResolved;
 
     public PipelineMetrics(MeterRegistry registry,
                            DLQService dlqService,
@@ -41,6 +43,10 @@ public class PipelineMetrics {
                 .description("发生 PII 掩码/哈希的事件数").register(registry);
         this.consentDenied = Counter.builder("tracker.events.consent_denied")
                 .description("因未授权而剥离 PII 的事件数").register(registry);
+        this.identityLinked = Counter.builder("tracker.identity.linked")
+                .description("建立 anonymousId→userId 映射的次数").register(registry);
+        this.identityResolved = Counter.builder("tracker.identity.resolved")
+                .description("回填 userId(匿名→已识别)的事件数").register(registry);
 
         Gauge.builder("tracker.dlq.size", dlqService, DLQService::getDLQSize)
                 .description("DLQ 当前积压条目数").register(registry);
@@ -57,4 +63,6 @@ public class PipelineMetrics {
     public void incrementSchemaViolation() { schemaViolation.increment(); }
     public void incrementPiiMasked() { piiMasked.increment(); }
     public void incrementConsentDenied() { consentDenied.increment(); }
+    public void incrementIdentityLinked() { identityLinked.increment(); }
+    public void incrementIdentityResolved() { identityResolved.increment(); }
 }
