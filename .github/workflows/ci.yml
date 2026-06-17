@@ -34,3 +34,18 @@ jobs:
         env:
           RUN_CH_IT: "true"
         run: mvn -B -ntp test -Dtest=ClickHouseWriterIT
+
+  redis-integration:
+    name: Redis Integration (Testcontainers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run Redis Testcontainers IT
+        env:
+          RUN_REDIS_IT: "true"
+        run: mvn -B -ntp test -Dtest=RedisIntegrationIT
