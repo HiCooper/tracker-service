@@ -47,6 +47,9 @@ class EventControllerTest {
     @Mock
     private com.gateflow.tracker.validation.SchemaValidationService schemaValidation;
 
+    @Mock
+    private PrivacyService privacyService;
+
     @InjectMocks
     private EventController eventController;
 

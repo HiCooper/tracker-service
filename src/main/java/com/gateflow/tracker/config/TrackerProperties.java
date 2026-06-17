@@ -16,6 +16,19 @@ public class TrackerProperties {
     private RateLimit rateLimit = new RateLimit();
     private Pipeline pipeline = new Pipeline();
     private Schema schema = new Schema();
+    private Privacy privacy = new Privacy();
+
+    @Data
+    public static class Privacy {
+        /** 拒绝同意(consent=false)的事件是否剥离 PII(默认 false,非破坏)。 */
+        private boolean requireConsent = false;
+        /** 是否对 userId 做不可逆哈希。 */
+        private boolean hashUserId = false;
+        /** 自定义属性中需哈希处理的 PII 字段名。 */
+        private java.util.List<String> piiFields = new java.util.ArrayList<>();
+        /** 是否对自定义属性做邮箱/手机号启发式掩码。 */
+        private boolean maskHeuristics = false;
+    }
 
     @Data
     public static class Pipeline {
