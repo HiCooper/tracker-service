@@ -1,217 +1,138 @@
 package com.gateflow.tracker.service;
 
-import com.gateflow.tracker.api.dto.EventDTO;
 import com.gateflow.tracker.config.TrackerProperties;
 import com.gateflow.tracker.model.EventRecord;
 import com.gateflow.tracker.model.Session;
 import com.gateflow.tracker.repository.SessionRepository;
-import org.junit.jupiter.api.BeforeEach;
+import com.gateflow.tracker.repository.SessionStore;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
-import java.time.Duration;
 import java.time.Instant;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class SessionServiceTest {
 
-    @Mock
-    private SessionRepository sessionRepository;
+    private final SessionStore store = mock(SessionStore.class);
+    private final SessionRepository repository = mock(SessionRepository.class);
+    private final TrackerProperties properties = new TrackerProperties();
+    private final SessionService service = new SessionService(store, repository, properties);
 
-    @Mock
-    private TrackerProperties properties;
-
-    @Mock
-    private TrackerProperties.Session sessionConfig;
-
-    private SessionService sessionService;
-
-    @BeforeEach
-    void setUp() {
-        when(properties.getSession()).thenReturn(sessionConfig);
-        when(sessionConfig.getTimeoutMinutes()).thenReturn(Duration.ofMinutes(30));
-        when(sessionConfig.getCacheTtlMinutes()).thenReturn(Duration.ofMinutes(30));
-
-        sessionService = new SessionService(sessionRepository, properties);
+    private EventRecord event(String type) {
+        return EventRecord.builder().eventType(type).build();
     }
 
     @Test
-    void getOrCreateSession_newUser_createsNewSession() throws Exception {
-        when(sessionRepository.findById(anyString())).thenReturn(null);
-        when(sessionRepository.save(any(Session.class))).thenAnswer(inv -> inv.getArgument(0));
+    void reusesExistingNonExpiredSession() {
+        Session existing = Session.builder().sessionId("s1").lastActiveAt(Instant.now()).build();
+        when(store.find("s1")).thenReturn(existing);
 
-        EventRecord event = createTestEvent("user_1", "anon_1");
+        Session result = service.getOrCreateSession("u", "a", "s1", null, null, null);
 
-        EventDTO.PageData pageData = EventDTO.PageData.builder().url("http://example.com").build();
-        EventDTO.ContextData contextData = EventDTO.ContextData.builder().utmSource("google").build();
-        EventDTO.DeviceData deviceData = EventDTO.DeviceData.builder().userAgent("Mozilla/5.0").build();
-
-        Session session = sessionService.getOrCreateSession(
-                "user_1", "anon_1", null,
-                pageData,
-                contextData,
-                deviceData
-        );
-
-        assertNotNull(session);
-        assertEquals("user_1", session.getUserId());
-        assertEquals("anon_1", session.getAnonymousId());
-        assertNotNull(session.getSessionId());
-        assertTrue(session.getSessionId().startsWith("sess_"));
-
-        verify(sessionRepository).save(any(Session.class));
+        assertThat(result.getSessionId()).isEqualTo("s1");
+        verify(store, never()).create(any());
     }
 
     @Test
-    void getOrCreateSession_existingSession_returnsExisting() {
-        Session existingSession = Session.builder()
-                .sessionId("existing_sess_123")
-                .userId("user_1")
-                .anonymousId("anon_1")
-                .lastActiveAt(Instant.now())
-                .build();
+    void createsNewSessionWhenAbsent() {
+        when(store.find("old")).thenReturn(null);
+        when(store.create(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        when(sessionRepository.findById("existing_sess_123")).thenReturn(existingSession);
+        Session result = service.getOrCreateSession("u", "a", "old", null, null, null);
 
-        EventRecord event = createTestEvent("user_1", "anon_1");
-
-        Session session = sessionService.getOrCreateSession(
-                "user_1", "anon_1", "existing_sess_123",
-                null, null, null
-        );
-
-        assertEquals("existing_sess_123", session.getSessionId());
-        verify(sessionRepository, never()).save(any());
+        assertThat(result.getSessionId()).startsWith("sess_");
+        verify(store).create(any());
     }
 
     @Test
-    void updateSessionMetrics_incrementsPageViews() {
-        Session session = Session.builder()
-                .sessionId("sess_123")
-                .pageViews(0)
-                .clicks(0)
-                .lastActiveAt(Instant.now())
-                .build();
+    void createsNewSessionWhenExistingExpired() {
+        Session expired = Session.builder().sessionId("s1")
+                .lastActiveAt(Instant.now().minusSeconds(3600)).build(); // > 30min
+        when(store.find("s1")).thenReturn(expired);
+        when(store.create(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        when(sessionRepository.findById("sess_123")).thenReturn(session);
-        when(sessionRepository.save(any(Session.class))).thenAnswer(inv -> inv.getArgument(0));
+        Session result = service.getOrCreateSession("u", "a", "s1", null, null, null);
 
-        EventRecord event = EventRecord.builder()
-                .eventId("evt_001")
-                .eventType("page_view")
-                .sessionId("sess_123")
-                .timestamp(Instant.now())
-                .pageUrl("http://example.com/page1")
-                .build();
-
-        sessionService.updateSessionMetrics("sess_123", event);
-
-        ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
-        verify(sessionRepository).save(captor.capture());
-
-        assertEquals(1, captor.getValue().getPageViews());
-        assertEquals(0, captor.getValue().getClicks()); // page_view doesn't increment clicks
+        assertThat(result.getSessionId()).isNotEqualTo("s1");
+        verify(store).create(any());
     }
 
     @Test
-    void updateSessionMetrics_clickEvent_incrementsClicks() {
-        Session session = Session.builder()
-                .sessionId("sess_123")
-                .pageViews(0)
-                .clicks(0)
-                .lastActiveAt(Instant.now())
-                .build();
+    void pageViewIncrementsCounterAndTouchesWithUrl() {
+        when(store.exists("s1")).thenReturn(true);
+        EventRecord e = EventRecord.builder().eventType("page_view").pageUrl("/p").build();
 
-        when(sessionRepository.findById("sess_123")).thenReturn(session);
-        when(sessionRepository.save(any(Session.class))).thenAnswer(inv -> inv.getArgument(0));
+        service.updateSessionMetrics("s1", e);
 
-        EventRecord event = EventRecord.builder()
-                .eventId("evt_001")
-                .eventType("click")
-                .sessionId("sess_123")
-                .timestamp(Instant.now())
-                .elementId("btn_1")
-                .build();
-
-        sessionService.updateSessionMetrics("sess_123", event);
-
-        ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
-        verify(sessionRepository).save(captor.capture());
-
-        assertEquals(1, captor.getValue().getClicks());
-        assertEquals(0, captor.getValue().getPageViews());
+        verify(store).increment("s1", "pageViews", 1);
+        verify(store).touch(eq("s1"), any(Instant.class), eq("/p"));
     }
 
     @Test
-    void updateSessionMetrics_scrollEvent_updatesMaxScrollDepth() {
-        Session session = Session.builder()
-                .sessionId("sess_123")
-                .pageViews(0)
-                .clicks(0)
-                .scrollDepthMax(0)
-                .lastActiveAt(Instant.now())
-                .build();
-
-        when(sessionRepository.findById("sess_123")).thenReturn(session);
-        when(sessionRepository.save(any(Session.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        EventRecord event = EventRecord.builder()
-                .eventId("evt_001")
-                .eventType("scroll")
-                .sessionId("sess_123")
-                .timestamp(Instant.now())
-                .scrollDepth(75)
-                .build();
-
-        sessionService.updateSessionMetrics("sess_123", event);
-
-        ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
-        verify(sessionRepository).save(captor.capture());
-
-        assertEquals(75, captor.getValue().getScrollDepthMax());
+    void clickIncrementsClicks() {
+        when(store.exists("s1")).thenReturn(true);
+        service.updateSessionMetrics("s1", event("click"));
+        verify(store).increment("s1", "clicks", 1);
     }
 
     @Test
-    void endSession_setsEndTimeAndDuration() {
-        Session session = Session.builder()
-                .sessionId("sess_123")
-                .startTime(Instant.now().minusSeconds(300))
-                .duration(null)
-                .endTime(null)
-                .lastActiveAt(Instant.now())
-                .build();
-
-        when(sessionRepository.findById("sess_123")).thenReturn(session);
-        when(sessionRepository.save(any(Session.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        sessionService.endSession("sess_123");
-
-        ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
-        verify(sessionRepository).save(captor.capture());
-
-        assertNotNull(captor.getValue().getEndTime());
-        assertNotNull(captor.getValue().getDuration());
-        assertTrue(captor.getValue().getDuration() > 0);
+    void scrollUpdatesMax() {
+        when(store.exists("s1")).thenReturn(true);
+        service.updateSessionMetrics("s1", EventRecord.builder().eventType("scroll").scrollDepth(80).build());
+        verify(store).updateScrollMax("s1", 80);
     }
 
-    private EventRecord createTestEvent(String userId, String anonymousId) {
-        return EventRecord.builder()
-                .eventId("evt_" + System.currentTimeMillis())
-                .eventType("page_view")
-                .userId(userId)
-                .anonymousId(anonymousId)
-                .timestamp(Instant.now())
-                .pageUrl("http://example.com")
-                .build();
+    @Test
+    void skipsMetricsWhenSessionMissing() {
+        when(store.exists("s1")).thenReturn(false);
+        service.updateSessionMetrics("s1", event("click"));
+        verify(store, never()).increment(any(), any(), anyLong());
+    }
+
+    @Test
+    void endSessionPersistsToClickHouseAndRemovesFromRedis() {
+        Session s = Session.builder().sessionId("s1")
+                .startTime(Instant.now().minusSeconds(120)).pageViews(3).build();
+        when(store.find("s1")).thenReturn(s);
+
+        service.endSession("s1");
+
+        verify(repository).save(any(Session.class));
+        verify(store).remove("s1");
+    }
+
+    @Test
+    void endSessionMarksBounceForSinglePageShortVisit() {
+        Session s = Session.builder().sessionId("s1")
+                .startTime(Instant.now().minusSeconds(2)).pageViews(1).firstPageUrl("/home").build();
+        when(store.find("s1")).thenReturn(s);
+
+        service.endSession("s1");
+
+        verify(repository).save(argThat(saved ->
+                Boolean.TRUE.equals(saved.getIsBounce()) && "/home".equals(saved.getBouncePage())));
+    }
+
+    @Test
+    void endSessionKeepsRedisWhenPersistFails() {
+        Session s = Session.builder().sessionId("s1").startTime(Instant.now().minusSeconds(60)).pageViews(2).build();
+        when(store.find("s1")).thenReturn(s);
+        doThrow(new RuntimeException("ch down")).when(repository).save(any());
+
+        service.endSession("s1");
+
+        verify(store, never()).remove("s1"); // 落库失败保留,等待重试
+    }
+
+    @Test
+    void endSessionNoOpWhenMissing() {
+        when(store.find("ghost")).thenReturn(null);
+        service.endSession("ghost");
+        verify(repository, never()).save(any());
     }
 }
