@@ -17,6 +17,15 @@ public class TrackerProperties {
     private Pipeline pipeline = new Pipeline();
     private Schema schema = new Schema();
     private Privacy privacy = new Privacy();
+    private Identity identity = new Identity();
+
+    @Data
+    public static class Identity {
+        /** 是否启用身份解析(anonymousId→userId 缝合)。 */
+        private boolean enabled = true;
+        /** 映射保留天数。 */
+        private int ttlDays = 90;
+    }
 
     @Data
     public static class Privacy {
