@@ -5,48 +5,54 @@ import com.gateflow.tracker.config.TrackerProperties;
 import com.gateflow.tracker.model.EventRecord;
 import com.gateflow.tracker.model.Session;
 import com.gateflow.tracker.repository.SessionRepository;
+import com.gateflow.tracker.repository.SessionStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 会话服务(结构修正 A):活跃会话态存于 Redis,计数走原子操作(无 JVM 锁、跨副本正确),
+ * 会话超时/结束时一次性把终态落到 ClickHouse {@code sessions}(ReplacingMergeTree 只写一次,
+ * 不再做读-改-写)。
+ */
 @Service
 @Slf4j
 public class SessionService {
 
+    private final SessionStore sessionStore;
     private final SessionRepository sessionRepository;
     private final TrackerProperties properties;
-    private final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();
 
-    public SessionService(SessionRepository sessionRepository, TrackerProperties properties) {
+    public SessionService(SessionStore sessionStore,
+                          SessionRepository sessionRepository,
+                          TrackerProperties properties) {
+        this.sessionStore = sessionStore;
         this.sessionRepository = sessionRepository;
         this.properties = properties;
     }
 
-    /**
-     * 获取或创建会话
-     */
+    /** 获取或创建会话。提供的 sessionId 命中且未过期则复用,否则新建(服务端生成 id)。 */
     public Session getOrCreateSession(String userId, String anonymousId,
-                                       String sessionId, EventDTO.PageData pageData,
-                                       EventDTO.ContextData contextData, EventDTO.DeviceData deviceData) {
+                                      String sessionId, EventDTO.PageData pageData,
+                                      EventDTO.ContextData contextData, EventDTO.DeviceData deviceData) {
         if (sessionId != null) {
-            Session existing = sessionRepository.findById(sessionId);
+            Session existing = sessionStore.find(sessionId);
             if (existing != null && !isExpired(existing)) {
                 return existing;
             }
         }
 
-        // 创建新会话
+        Instant now = Instant.now();
         Session newSession = Session.builder()
                 .sessionId(generateSessionId())
                 .userId(userId)
                 .anonymousId(anonymousId)
                 .platform("web")
-                .startTime(Instant.now())
-                .lastActiveAt(Instant.now())
+                .startTime(now)
+                .lastActiveAt(now)
                 .pageViews(0)
                 .clicks(0)
                 .exposures(0)
@@ -61,109 +67,70 @@ public class SessionService {
                 .os(deviceData != null ? parseOS(deviceData.getUserAgent()) : null)
                 .build();
 
-        return sessionRepository.save(newSession);
+        return sessionStore.create(newSession);
     }
 
-    /**
-     * 更新会话聚合指标（会话级别加锁，防止并发写丢失）
-     */
+    /** 更新会话聚合指标:全部经 Redis 原子操作,无锁、无读-改-写竞争。 */
     public void updateSessionMetrics(String sessionId, EventRecord event) {
-        if (sessionId == null) {
+        if (sessionId == null || !sessionStore.exists(sessionId)) {
             return;
         }
-
-        Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
-        synchronized (lock) {
-            doUpdateSessionMetrics(sessionId, event);
-        }
-
-        // 如果会话已过期，清理锁
-        if (sessionLocks.size() > 10_000) {
-            sessionLocks.clear();
-            log.info("Session locks cleared to prevent unbounded growth");
-        }
-    }
-
-    private void doUpdateSessionMetrics(String sessionId, EventRecord event) {
-        if (sessionId == null) {
+        String type = event.getEventType();
+        if (type == null) {
             return;
         }
-
-        Session session = sessionRepository.findById(sessionId);
-        if (session == null) {
-            log.warn("Session {} not found for metric update", sessionId);
-            return;
-        }
-
-        // 检查会话是否已过期
-        if (isExpired(session)) {
-            return;
-        }
-
-        // 更新指标
-        switch (event.getEventType()) {
-            case "page_view":
-                session.setPageViews(session.getPageViews() + 1);
-                if (event.getPageUrl() != null) {
-                    session.setLastPageUrl(event.getPageUrl());
-                }
-                break;
-            case "click":
-                session.setClicks(session.getClicks() + 1);
-                break;
-            case "exposure":
-                session.setExposures(session.getExposures() + 1);
-                break;
-            case "scroll":
-                if (event.getScrollDepth() != null &&
-                        event.getScrollDepth() > session.getScrollDepthMax()) {
-                    session.setScrollDepthMax(event.getScrollDepth());
-                }
-                break;
-        }
-
-        // 更新最后活跃时间
-        session.setLastActiveAt(Instant.now());
-
-        sessionRepository.save(session);
-    }
-
-    /**
-     * 结束会话
-     */
-    public void endSession(String sessionId) {
-        Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
-        synchronized (lock) {
-            try {
-                Session session = sessionRepository.findById(sessionId);
-                if (session == null) {
-                    return;
-                }
-
-                session.setEndTime(Instant.now());
-                session.setDuration(Duration.between(session.getStartTime(), session.getEndTime()).toMillis());
-
-                if (session.getPageViews() != null && session.getPageViews() == 1
-                        && session.getDuration() != null && session.getDuration() < 10000) {
-                    session.setIsBounce(true);
-                    session.setBouncePage(session.getFirstPageUrl());
-                }
-
-                sessionRepository.save(session);
-            } finally {
-                sessionLocks.remove(sessionId);
+        switch (type) {
+            case "page_view" -> {
+                sessionStore.increment(sessionId, "pageViews", 1);
+                sessionStore.touch(sessionId, Instant.now(), event.getPageUrl());
+                return;
             }
+            case "click" -> sessionStore.increment(sessionId, "clicks", 1);
+            case "exposure" -> sessionStore.increment(sessionId, "exposures", 1);
+            case "scroll" -> {
+                if (event.getScrollDepth() != null) {
+                    sessionStore.updateScrollMax(sessionId, event.getScrollDepth());
+                }
+            }
+            default -> { /* 其他事件仅刷新活跃时间 */ }
         }
+        sessionStore.touch(sessionId, Instant.now(), null);
     }
 
-    /**
-     * 检查会话是否过期
-     */
+    /** 结束会话:读取终态 → 计算时长/跳出 → 一次性写 ClickHouse → 从 Redis 删除。 */
+    public void endSession(String sessionId) {
+        Session session = sessionStore.find(sessionId);
+        if (session == null) {
+            return;
+        }
+        Instant end = Instant.now();
+        session.setEndTime(end);
+        session.setDuration(session.getStartTime() != null
+                ? Duration.between(session.getStartTime(), end).toMillis() : 0L);
+
+        if (session.getPageViews() != null && session.getPageViews() <= 1
+                && session.getDuration() != null && session.getDuration() < 10_000) {
+            session.setIsBounce(true);
+            session.setBouncePage(session.getFirstPageUrl());
+        } else {
+            session.setIsBounce(false);
+        }
+
+        try {
+            sessionRepository.save(session);
+        } catch (Exception e) {
+            log.error("Failed to persist finalized session {}, keeping in Redis for retry", sessionId, e);
+            return; // 落库失败保留 Redis 记录,下次扫描重试,避免丢失
+        }
+        sessionStore.remove(sessionId);
+    }
+
     private boolean isExpired(Session session) {
         Duration timeout = properties.getSession().getTimeoutMinutes();
-        Instant lastActive = session.getLastActiveAt();
+        Instant lastActive = session.getLastActiveAt() != null
+                ? session.getLastActiveAt() : session.getStartTime();
         if (lastActive == null) {
-            lastActive = session.getStartTime();
+            return true;
         }
         return Duration.between(lastActive, Instant.now()).compareTo(timeout) > 0;
     }
