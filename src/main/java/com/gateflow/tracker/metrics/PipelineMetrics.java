@@ -20,6 +20,7 @@ public class PipelineMetrics {
     private final Counter duplicate;
     private final Counter rejected;
     private final Counter dlqStored;
+    private final Counter schemaViolation;
 
     public PipelineMetrics(MeterRegistry registry,
                            DLQService dlqService,
@@ -32,6 +33,8 @@ public class PipelineMetrics {
                 .description("校验失败或采集失败被拒的事件数").register(registry);
         this.dlqStored = Counter.builder("tracker.events.dlq.stored")
                 .description("写入 DLQ 的事件数").register(registry);
+        this.schemaViolation = Counter.builder("tracker.events.schema_violation")
+                .description("不符合 app 事件契约的事件数").register(registry);
 
         Gauge.builder("tracker.dlq.size", dlqService, DLQService::getDLQSize)
                 .description("DLQ 当前积压条目数").register(registry);
@@ -45,4 +48,5 @@ public class PipelineMetrics {
     public void incrementDuplicate() { duplicate.increment(); }
     public void incrementRejected() { rejected.increment(); }
     public void incrementDlqStored() { dlqStored.increment(); }
+    public void incrementSchemaViolation() { schemaViolation.increment(); }
 }

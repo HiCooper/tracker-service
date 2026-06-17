@@ -15,6 +15,7 @@ public class TrackerProperties {
     private Kafka kafka = new Kafka();
     private RateLimit rateLimit = new RateLimit();
     private Pipeline pipeline = new Pipeline();
+    private Schema schema = new Schema();
 
     @Data
     public static class Pipeline {
@@ -23,6 +24,21 @@ public class TrackerProperties {
          * false: 直接同步写 ClickHouse。
          */
         private boolean asyncKafka = true;
+    }
+
+    @Data
+    public static class Schema {
+        /** 事件契约校验模式。 */
+        private Mode mode = Mode.MONITOR;
+
+        public enum Mode {
+            /** 关闭校验。 */
+            OFF,
+            /** 仅打点违规指标,事件仍接收(灰度/非破坏,默认)。 */
+            MONITOR,
+            /** 违规事件进隔离区,不进主表。 */
+            ENFORCE
+        }
     }
 
     @Data
