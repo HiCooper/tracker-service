@@ -89,6 +89,15 @@ class ClickHouseWriterTest {
     }
 
     @Test
+    void bindsAppCode() throws Exception {
+        PreparedStatement stmt = runWrite(sampleEvent().toBuilder().appCode("A_MAIN").build());
+
+        ArgumentCaptor<String> strings = ArgumentCaptor.forClass(String.class);
+        verify(stmt, org.mockito.Mockito.atLeastOnce()).setString(anyInt(), strings.capture());
+        assertThat(strings.getAllValues()).contains("A_MAIN");
+    }
+
+    @Test
     void emptyPropertiesBecomeEmptyJsonObject() throws Exception {
         PreparedStatement stmt = runWrite(sampleEvent().toBuilder().properties(null).build());
 

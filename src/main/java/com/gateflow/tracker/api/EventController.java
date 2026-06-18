@@ -91,6 +91,8 @@ public class EventController {
 
             // 数据增强
             EventRecord enriched = enrichmentService.enrich(event);
+            // app 维度:统一为采集 clientId(与契约 key 一致),便于按 app 告警/分析
+            enriched.setAppCode(clientId);
 
             // 身份解析:已识别事件建立映射;匿名事件回填 userId(把匿名行为缝合到用户)
             if (hasText(enriched.getUserId()) && hasText(enriched.getAnonymousId())) {
