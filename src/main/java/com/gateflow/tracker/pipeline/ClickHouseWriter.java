@@ -23,7 +23,7 @@ import java.util.List;
 public class ClickHouseWriter {
 
     private static final String INSERT_SQL =
-            "INSERT INTO gateflow_tracker.events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            "INSERT INTO gateflow_tracker.events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     private final DataSource dataSource;
     private final ObjectMapper objectMapper;
@@ -118,6 +118,8 @@ public class ClickHouseWriter {
         stmt.setObject(i++, e.getVariants() != null ? e.getVariants().toArray(new String[0]) : new String[0]);
 
         stmt.setString(i++, serializeProperties(e));
+        // app 维度(末列,与 V2 迁移追加位置一致)
+        stmt.setString(i++, nullToEmpty(e.getAppCode()));
     }
 
     /** 将 properties Map 序列化为 JSON 字符串(而非 Map.toString(),后者不是合法 JSON)。 */

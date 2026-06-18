@@ -20,6 +20,8 @@ public class EventRecord {
     private String userId;
     private String anonymousId;
     private String sessionId;
+    /** 所属 app(= 采集 clientId,与契约 key 一致)。 */
+    private String appCode;
 
     private Instant timestamp;
     private Instant clientTime;

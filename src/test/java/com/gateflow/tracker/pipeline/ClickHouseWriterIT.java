@@ -73,6 +73,7 @@ class ClickHouseWriterIT {
                 .clientTime(Instant.parse("2026-06-15T06:59:59Z"))
                 .receivedAt(Instant.parse("2026-06-15T07:00:01Z"))
                 .properties(Map.of("foo", "bar", "n", 42))
+                .appCode("A_MAIN")
                 .build();
 
         ClickHouseWriter writer = new ClickHouseWriter(dataSource, MAPPER, CircuitBreakerRegistry.ofDefaults());
@@ -81,7 +82,7 @@ class ClickHouseWriterIT {
         try (Connection conn = dataSource.getConnection();
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(
-                     "SELECT toString(timestamp) AS ts, properties FROM gateflow_tracker.events " +
+                     "SELECT toString(timestamp) AS ts, properties, app_code FROM gateflow_tracker.events " +
                      "WHERE event_id = 'evt_it_1'")) {
             assertThat(rs.next()).isTrue();
             // 时间戳必须精确往返(若仍按 epoch-millis 误绑会得到错误年份)
@@ -89,6 +90,7 @@ class ClickHouseWriterIT {
             Map<String, Object> props = MAPPER.readValue(rs.getString("properties"),
                     new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
             assertThat(props).containsEntry("foo", "bar").containsEntry("n", 42);
+            assertThat(rs.getString("app_code")).isEqualTo("A_MAIN");
         }
     }
 
@@ -102,7 +104,7 @@ class ClickHouseWriterIT {
                 "element_id String, element_type String, element_text String, click_x Nullable(Int32)," +
                 "click_y Nullable(Int32), scroll_depth Nullable(UInt8), stay_duration Nullable(Int64)," +
                 "utm_source String, utm_medium String, utm_campaign String, utm_term String, utm_content String," +
-                "exp_ids Array(String), variants Array(String), properties String" +
+                "exp_ids Array(String), variants Array(String), properties String, app_code String DEFAULT ''" +
                 ") ENGINE = MergeTree() PARTITION BY toYYYYMMDD(timestamp) " +
                 "ORDER BY (user_id, timestamp, event_type, session_id)";
     }
