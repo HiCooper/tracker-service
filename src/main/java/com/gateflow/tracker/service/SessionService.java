@@ -35,7 +35,7 @@ public class SessionService {
     }
 
     /** 获取或创建会话。提供的 sessionId 命中且未过期则复用,否则新建(服务端生成 id)。 */
-    public Session getOrCreateSession(String userId, String anonymousId,
+    public Session getOrCreateSession(String userId, String anonymousId, String appCode,
                                       String sessionId, EventDTO.PageData pageData,
                                       EventDTO.ContextData contextData, EventDTO.DeviceData deviceData) {
         if (sessionId != null) {
@@ -50,6 +50,7 @@ public class SessionService {
                 .sessionId(generateSessionId())
                 .userId(userId)
                 .anonymousId(anonymousId)
+                .appCode(appCode)
                 .platform("web")
                 .startTime(now)
                 .lastActiveAt(now)

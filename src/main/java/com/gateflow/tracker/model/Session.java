@@ -18,6 +18,9 @@ public class Session {
     private String anonymousId;
     private String platform;
 
+    /** 所属 app(= 采集 clientId,与契约 key / 事件 app_code 一致)。 */
+    private String appCode;
+
     private Instant startTime;
     private Instant endTime;
     private Long duration;

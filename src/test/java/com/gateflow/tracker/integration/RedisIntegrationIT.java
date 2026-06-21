@@ -68,7 +68,7 @@ class RedisIntegrationIT {
     void sessionStoreAtomicCountersAndExpiryScan() {
         SessionStore store = new SessionStore(redis, PROPS);
         Instant now = Instant.now();
-        Session s = Session.builder().sessionId("sit1").userId("u").platform("web")
+        Session s = Session.builder().sessionId("sit1").userId("u").appCode("A_MAIN").platform("web")
                 .startTime(now).lastActiveAt(now)
                 .pageViews(0).clicks(0).exposures(0).scrollDepthMax(0).build();
         store.create(s);
@@ -82,6 +82,7 @@ class RedisIntegrationIT {
 
         Session loaded = store.find("sit1");
         assertThat(loaded).isNotNull();
+        assertThat(loaded.getAppCode()).isEqualTo("A_MAIN");
         assertThat(loaded.getClicks()).isEqualTo(2);
         assertThat(loaded.getPageViews()).isEqualTo(1);
         assertThat(loaded.getScrollDepthMax()).isEqualTo(30);

@@ -32,7 +32,7 @@ class SessionServiceTest {
         Session existing = Session.builder().sessionId("s1").lastActiveAt(Instant.now()).build();
         when(store.find("s1")).thenReturn(existing);
 
-        Session result = service.getOrCreateSession("u", "a", "s1", null, null, null);
+        Session result = service.getOrCreateSession("u", "a", "app1", "s1", null, null, null);
 
         assertThat(result.getSessionId()).isEqualTo("s1");
         verify(store, never()).create(any());
@@ -43,9 +43,10 @@ class SessionServiceTest {
         when(store.find("old")).thenReturn(null);
         when(store.create(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        Session result = service.getOrCreateSession("u", "a", "old", null, null, null);
+        Session result = service.getOrCreateSession("u", "a", "app1", "old", null, null, null);
 
         assertThat(result.getSessionId()).startsWith("sess_");
+        assertThat(result.getAppCode()).isEqualTo("app1");
         verify(store).create(any());
     }
 
@@ -56,7 +57,7 @@ class SessionServiceTest {
         when(store.find("s1")).thenReturn(expired);
         when(store.create(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        Session result = service.getOrCreateSession("u", "a", "s1", null, null, null);
+        Session result = service.getOrCreateSession("u", "a", "app1", "s1", null, null, null);
 
         assertThat(result.getSessionId()).isNotEqualTo("s1");
         verify(store).create(any());
