@@ -59,6 +59,7 @@ public class SessionStore {
         put(fields, "sessionId", s.getSessionId());
         put(fields, "userId", s.getUserId());
         put(fields, "anonymousId", s.getAnonymousId());
+        put(fields, "appCode", s.getAppCode());
         put(fields, "platform", s.getPlatform());
         put(fields, "startTime", epoch(s.getStartTime()));
         put(fields, "lastActiveAt", epoch(s.getLastActiveAt()));
@@ -91,6 +92,7 @@ public class SessionStore {
                 .sessionId(str(h, "sessionId"))
                 .userId(str(h, "userId"))
                 .anonymousId(str(h, "anonymousId"))
+                .appCode(str(h, "appCode"))
                 .platform(str(h, "platform"))
                 .startTime(instant(h, "startTime"))
                 .lastActiveAt(instant(h, "lastActiveAt"))

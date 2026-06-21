@@ -61,7 +61,7 @@ class EventControllerTest {
         when(rateLimiter.tryAcquire(anyString())).thenReturn(true);
         when(deduplicationService.isDuplicate(anyString())).thenReturn(false);
         when(enrichmentService.enrich(any(EventDTO.class))).thenReturn(createTestEventRecord("evt_001"));
-        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any()))
+        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Session.builder().sessionId("sess_123").build());
         doNothing().when(collectorService).collect(any(EventRecord.class));
 
@@ -131,7 +131,7 @@ class EventControllerTest {
         when(rateLimiter.tryAcquire(anyString())).thenReturn(true);
         when(deduplicationService.isDuplicate(anyString())).thenReturn(false);
         when(enrichmentService.enrich(any(EventDTO.class))).thenReturn(createTestEventRecord("evt_001"));
-        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any()))
+        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Session.builder().sessionId("sess_123").build());
         doThrow(new RuntimeException("Kafka failed")).when(collectorService).collect(any(EventRecord.class));
 
@@ -154,7 +154,7 @@ class EventControllerTest {
         when(deduplicationService.isDuplicate("evt_002")).thenReturn(true);
         when(deduplicationService.isDuplicate("evt_003")).thenReturn(false);
         when(enrichmentService.enrich(any(EventDTO.class))).thenReturn(createTestEventRecord("evt_001"));
-        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any()))
+        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Session.builder().sessionId("sess_123").build());
         doNothing().when(collectorService).collect(any(EventRecord.class));
 
@@ -220,7 +220,7 @@ class EventControllerTest {
                 .anonymousId("anon1").build(); // userId 为空
         when(enrichmentService.enrich(any(EventDTO.class))).thenReturn(anon);
         when(identityService.resolve("anon1")).thenReturn("user9");
-        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any()))
+        when(sessionService.getOrCreateSession(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Session.builder().sessionId("s").build());
         doNothing().when(collectorService).collect(any(EventRecord.class));
 

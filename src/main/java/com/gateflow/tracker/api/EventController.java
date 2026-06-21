@@ -110,6 +110,7 @@ public class EventController {
             Session session = sessionService.getOrCreateSession(
                     enriched.getUserId(),
                     enriched.getAnonymousId(),
+                    clientId,
                     event.getSession() != null ? event.getSession().getSessionId() : null,
                     event.getPage(),
                     event.getContext(),

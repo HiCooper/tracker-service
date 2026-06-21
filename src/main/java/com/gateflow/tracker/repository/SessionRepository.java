@@ -36,8 +36,8 @@ public class SessionRepository {
                 is_bounce, bounce_page,
                 first_page_url, last_page_url,
                 utm_source, utm_medium, utm_campaign,
-                device_type, os, last_active_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                device_type, os, last_active_at, app_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (Connection conn = dataSource.getConnection();
@@ -87,5 +87,7 @@ public class SessionRepository {
         stmt.setString(idx++, session.getLastActiveAt() != null ?
                 java.time.LocalDateTime.ofInstant(session.getLastActiveAt(), ZoneOffset.UTC).format(CH_DATETIME) :
                 java.time.LocalDateTime.now(ZoneOffset.UTC).format(CH_DATETIME));
+
+        stmt.setString(idx++, session.getAppCode() != null ? session.getAppCode() : "");
     }
 }
