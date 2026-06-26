@@ -1,6 +1,7 @@
 package com.gateflow.tracker.security;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -23,13 +24,18 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class SignatureVerifier {
 
-    private static final String ADMIN_URL = "http://localhost:8099/api/v1/internal/app-secret/";
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+    /** tracker-admin 内网基址(容器/分布式部署可配),默认本机 8082。 */
+    private final String appSecretUrl;
 
     private final Map<String, CachedSecret> cache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 300_000;
 
     private record CachedSecret(String secret, long expireAt) {}
+
+    public SignatureVerifier(@Value("${gateflow.admin.base-url:http://localhost:8082}") String adminBaseUrl) {
+        this.appSecretUrl = adminBaseUrl.replaceAll("/$", "") + "/api/v1/internal/app-secret/";
+    }
 
     /**
      * 验证 HMAC-SHA256 签名。
@@ -63,7 +69,7 @@ public class SignatureVerifier {
         if (cached != null && System.currentTimeMillis() < cached.expireAt) return cached.secret;
 
         try {
-            var req = HttpRequest.newBuilder().uri(URI.create(ADMIN_URL + appKey))
+            var req = HttpRequest.newBuilder().uri(URI.create(appSecretUrl + appKey))
                     .timeout(Duration.ofSeconds(3)).GET().build();
             var resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() == 200) {
